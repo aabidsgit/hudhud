@@ -25,12 +25,15 @@ import re
 from typing import List, Dict, Any, Optional
 
 import streamlit as st
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 import openai
 from openai import OpenAI
 
-# Load .env if present
-load_dotenv()
+# -----------------------------------------------------------------------------
+# Robust .env loading (make .env override OS env if both exist)
+# -----------------------------------------------------------------------------
+# If you prefer OS env to win, set override=False.
+load_dotenv(find_dotenv(usecwd=True), override=True)
 
 
 # ---------------------------
@@ -314,12 +317,36 @@ def mock_petrol_with_carwash_on_way_to_diriyah(near_lat: float, near_lon: float,
 # OpenAI client + chat logic
 # ---------------------------
 
+def _mask_key(k: Optional[str]) -> str:
+    if not k:
+        return "(missing)"
+    if len(k) <= 12:
+        return "****" + k[-4:]
+    return k[:6] + "…" + k[-6:]
+
+
 def get_openai_client() -> OpenAI:
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        st.error("OPENAI_API_KEY is not set in your environment.")
+    """
+    Resolve the API key with clear, safe diagnostics.
+    Precedence (adjust if desired):
+      1) Environment variable (after .env override)
+      2) streamlit secrets (if present and env missing)
+    """
+    key = os.getenv("OPENAI_API_KEY")
+    source = "env"
+
+    # If not found in env, allow Streamlit secrets to supply it
+    try:
+        if (not key) and ("OPENAI_API_KEY" in st.secrets):
+            key = st.secrets["OPENAI_API_KEY"]
+            source = "st.secrets"
+    except Exception:
+        # st.secrets might not be available outside Streamlit runtime
+        pass
+    if not key:
+        st.error("OPENAI_API_KEY not found. Set it in .env, OS env, or .streamlit/secrets.toml.")
         st.stop()
-    return OpenAI(api_key=api_key)
+    return OpenAI(api_key=key)
 
 
 SYSTEM_POLICIES = """
